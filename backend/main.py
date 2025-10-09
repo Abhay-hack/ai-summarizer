@@ -37,7 +37,6 @@ def root():
 @app.post("/summarize")
 def summarize_text(input: TextInput):
     try:
-        # Split text into chunks if too long
         chunks = split_text(input.text, max_len=1000)
         summaries = []
 
@@ -48,12 +47,14 @@ def summarize_text(input: TextInput):
             }
             headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
 
-            response = requests.post(HF_API_URL, headers=headers, json=payload)
+            response = requests.post(HF_API_URL, headers=headers, json=payload, timeout=60)
             response.raise_for_status()
             result = response.json()
 
             if isinstance(result, list) and "summary_text" in result[0]:
                 summaries.append(result[0]["summary_text"])
+            elif isinstance(result, dict) and "error" in result:
+                return {"error": result["error"]}
             else:
                 return {"error": f"Unexpected response: {result}"}
 
@@ -62,3 +63,5 @@ def summarize_text(input: TextInput):
 
     except Exception as e:
         return {"error": str(e)}
+    
+    
