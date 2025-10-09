@@ -9,7 +9,7 @@ from utils import split_text  # Import your helper function
 # Load environment variables
 load_dotenv()
 HF_API_TOKEN = os.getenv("HF_API_TOKEN")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+FRONTEND_URL = os.getenv("FRONTEND_URL")
 
 # Hugging Face Inference API (bart-large-cnn)
 HF_API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn"
@@ -20,7 +20,7 @@ app = FastAPI(title="AI-Powered Summarizer")
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_URL],  # Use frontend URL from .env
+    allow_origins=["*"],  # Use frontend URL from .env
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -63,5 +63,4 @@ def summarize_text(input: TextInput):
 
     except Exception as e:
         return {"error": str(e)}
-    
     
