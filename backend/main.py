@@ -1,7 +1,8 @@
 import os
 import requests
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from utils import split_text  # Import your helper function
@@ -9,7 +10,7 @@ from utils import split_text  # Import your helper function
 # Load environment variables
 load_dotenv()
 HF_API_TOKEN = os.getenv("HF_API_TOKEN")
-FRONTEND_URL = os.getenv("FRONTEND_URL")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")  # default to local dev
 
 # Hugging Face Inference API (bart-large-cnn)
 HF_API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn"
@@ -20,11 +21,20 @@ app = FastAPI(title="AI-Powered Summarizer")
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Use frontend URL from .env
+    allow_origins=[FRONTEND_URL],  # frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Preflight handler for OPTIONS requests
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(rest_of_path: str, request: Request):
+    response = JSONResponse()
+    response.headers["Access-Control-Allow-Origin"] = FRONTEND_URL
+    response.headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
 
 # Request model
 class TextInput(BaseModel):
@@ -63,4 +73,3 @@ def summarize_text(input: TextInput):
 
     except Exception as e:
         return {"error": str(e)}
-    
