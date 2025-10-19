@@ -3,6 +3,8 @@ import axios from "axios";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
+const API_URL = import.meta.env.VITE_API_URL;
+
 const YoutubeSummarizer = memo(() => {
   const [url, setUrl] = useState("");
   const [segments, setSegments] = useState([]);
@@ -43,8 +45,7 @@ const YoutubeSummarizer = memo(() => {
     try {
       // Simulate progress (update in real app with backend websocket if needed)
       const interval = setInterval(() => setProgress((p) => Math.min(p + 20, 80)), 500);
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';  // Fallback for local dev
-      const res = await axios.post(`${apiUrl}/youtube-summarize`, { url });
+      const res = await axios.post(`${API_URL}/youtube-summarize`, { url });
       clearInterval(interval);
       setProgress(100);
       if (res.data.segments) {
