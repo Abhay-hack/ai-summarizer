@@ -26,7 +26,7 @@ export default function About() {
         more accessible by converting lengthy text into concise and actionable
         summaries.  
         <br /><br />
-        Powered by <span className="font-semibold text-blue-600">Hugging Face</span> 
+        Powered by <span className="font-semibold text-blue-600">Hugging Face </span> 
         transformer models, a <span className="font-semibold text-blue-600">FastAPI backend</span>, 
         and a <span className="font-semibold text-blue-600">React + Vite frontend</span>, 
         this application demonstrates how AI can simplify knowledge without

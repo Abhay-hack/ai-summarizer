@@ -9,6 +9,7 @@ export default function Header() {
   const navLinks = [
     { name: "Home", path: "/" },
     { name: "Summarizer", path: "/summarizer" },
+    { name: "YT", path: "/youtube-summarizer" },
     { name: "About", path: "/about" },
   ];
 
