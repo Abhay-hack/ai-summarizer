@@ -3,8 +3,6 @@ import axios from "axios";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
-const API_URL = import.meta.env.VITE_API_URL;
-
 const YoutubeSummarizer = memo(() => {
   const [url, setUrl] = useState("");
   const [segments, setSegments] = useState([]);
@@ -13,7 +11,7 @@ const YoutubeSummarizer = memo(() => {
   const [error, setError] = useState("");
   const [progress, setProgress] = useState(0);  // For loading bar
   const [expandedSegments, setExpandedSegments] = useState(new Set());  // Track expanded segments
-  const [videoId, setVideoId] = useState("");  // Store video ID for timestamps and thumbnail
+  const [videoId, setVideoId] = useState("");  // Store video ID for timestamps
 
   const validateYouTubeUrl = useCallback((inputUrl) => {
     const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
@@ -45,7 +43,7 @@ const YoutubeSummarizer = memo(() => {
     try {
       // Simulate progress (update in real app with backend websocket if needed)
       const interval = setInterval(() => setProgress((p) => Math.min(p + 20, 80)), 500);
-      const res = await axios.post(`${API_URL}/youtube-summarize`, { url });
+      const res = await axios.post("http://localhost:8000/youtube-summarize", { url });
       clearInterval(interval);
       setProgress(100);
       if (res.data.segments) {
@@ -111,7 +109,6 @@ const YoutubeSummarizer = memo(() => {
   }, []);
 
   const jumpToTimestamp = useCallback((startTimeStr) => {
-    if (!videoId) return;
     const [minutes, seconds] = startTimeStr.split(':').map(Number);
     const timestampSeconds = minutes * 60 + seconds;
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}&t=${timestampSeconds}s`;

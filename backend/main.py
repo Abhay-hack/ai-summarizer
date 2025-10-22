@@ -83,6 +83,25 @@ def summarize_text(input: TextInput):
 def summarize_youtube(input: YoutubeInput):
     try:
         import re
+        import yt_dlp
+        from io import StringIO
+        import webvtt  # pip install webvtt-py for VTT parsing
+        import os
+
+        # Helper: Parse VTT to transcript_data list [{'text': str, 'start': float, 'duration': float}]
+        def parse_vtt_to_transcript(vtt_content):
+            if not vtt_content.strip():
+                raise ValueError("Empty VTT content")
+            vtt = webvtt.read_buffer(StringIO(vtt_content))
+            transcript_data = []
+            for caption in vtt:
+                start = caption.start_in_seconds
+                duration = caption.end_in_seconds - start
+                text = caption.text.strip().replace('\n', ' ')  # Flatten multi-line
+                transcript_data.append({'text': text, 'start': start, 'duration': duration})
+            if not transcript_data:
+                raise ValueError("No captions in VTT")
+            return transcript_data
 
         # Extract video ID from YouTube URL
         match = re.search(r"(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})", input.url)
@@ -92,74 +111,96 @@ def summarize_youtube(input: YoutubeInput):
         video_id = match.group(1)
         print(f"[DEBUG] Extracted Video ID: {video_id}")
 
-        # Fetch transcript (with English priority + fallback to any available)
-        transcript_data = None
-        video_lang = 'en'  # Default assumption
-        ytt_api = YouTubeTranscriptApi()
-        try:
-            # Try English first
-            transcript_data = ytt_api.fetch(video_id, languages=['en'])
-            video_lang = 'en'
-        except NoTranscriptFound:
-            print(f"[DEBUG] No English transcript; listing available for fallback")
-            try:
-                transcript_list = ytt_api.list_transcripts(video_id)
-                if transcript_list:
-                    fallback_transcript = transcript_list.find_transcript([])  # Empty list = any/default
-                    transcript_data = fallback_transcript.fetch()
-                    video_lang = fallback_transcript.language_code
-                    print(f"[DEBUG] Fetched fallback in language: {video_lang}")
-                else:
-                    raise NoTranscriptFound("No transcripts at all")
-            except Exception as list_e:
-                print(f"[DEBUG] Failed to list/fallback: {list_e}")
-                return {"error": "No transcripts available in any language."}
-        except (TranscriptsDisabled, VideoUnavailable) as e:
-            print(f"[DEBUG] {type(e).__name__} for video {video_id}")
-            return {"error": f"Transcripts disabled or video unavailable: {str(e)}"}
-        except Exception as e:
-            print(f"[DEBUG] Other error fetching transcript: {e}")
-            return {"error": f"Failed to fetch transcript: {str(e)}"}
+        # Probe for available subs without download
+        ydl_opts_probe = {
+            'skip_download': True,
+            'quiet': True,
+            'no_warnings': True,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts_probe) as ydl:
+            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+            manual_subs = info.get('subtitles', {}).get('en', [])
+            auto_subs = info.get('automatic_captions', {}).get('en', [])
+
+        if not manual_subs and not auto_subs:
+            return {"error": "No English subtitles available"}
+
+        sub_type = 'manual' if manual_subs else 'auto'
+        video_lang = 'en'  # Set language
+        print(f"[DEBUG] Using {sub_type} English subtitles")
+
+        # Download only the subtitle (VTT format)
+        ydl_opts = {
+            'skip_download': True,  # No video
+            'writesubtitles': bool(manual_subs),
+            'writeautomaticsubs': bool(auto_subs),
+            'subtitleslangs': ['en'],
+            'sub_format': 'vtt',  # Force VTT
+            'outtmpl': '%(id)s.%(ext)s',  # Simple template; we'll search for result
+            'quiet': True,
+            'no_warnings': True,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
+
+        # Find the downloaded VTT file dynamically
+        files = [f for f in os.listdir('.') if f.startswith(video_id) and f.endswith('.vtt')]
+        if not files:
+            # Fallback search for any .vtt with 'en' (in case title-based naming)
+            files = [f for f in os.listdir('.') if '.en.' in f and f.endswith('.vtt')]
+        files.sort(key=len)  # Prefer shortest (most exact) match
+        if not files:
+            raise FileNotFoundError(f"No VTT file created for {video_id}")
+        filename = files[0]
+        print(f"[DEBUG] Found subtitle file: {filename}")
+
+        with open(filename, 'r', encoding='utf-8') as f:
+            vtt_content = f.read()
+        os.remove(filename)  # Clean up temp file
+
+        transcript_data = parse_vtt_to_transcript(vtt_content)
+        print(f"[DEBUG] Fetched {sub_type} English transcript ({len(transcript_data)} segments)")
 
         if not transcript_data:
-            print(f"[DEBUG] Empty transcript for video {video_id}")
+            print(f"[DEBUG] Empty transcript data for video {video_id}")
             return {"error": "No transcript data found."}
 
-        # Segregate into 5-min segments using timestamps
+        # Segregate into 5-min segments using timestamps (unchanged)
         segments = []
         current_segment = []
         segment_start = 0
         segment_duration = 300  # 5 minutes in seconds
 
         for t in transcript_data:
-            current_time = t.start
+            current_time = t['start']
             if current_time >= segment_start + segment_duration or not current_segment:
                 # Start new segment
-                if current_segment:
-                    # Summarize previous
-                    segment_text = " ".join([s.text for s in current_segment])
-                    chunk_summaries = summarize_chunks(segment_text)
-                    segment_end = segment_start + segment_duration
-                    segments.append({
-                        "start_time": format_time(segment_start),
-                        "end_time": format_time(segment_end),
-                        "summary": " ".join(chunk_summaries)
-                    })
+                if current_segment and len(current_segment) > 0:
+                    segment_text = " ".join([s['text'] for s in current_segment])
+                    if segment_text.strip():
+                        chunk_summaries = summarize_chunks(segment_text)
+                        segment_end = segment_start + segment_duration
+                        segments.append({
+                            "start_time": format_time(segment_start),
+                            "end_time": format_time(segment_end),
+                            "summary": " ".join(chunk_summaries)
+                        })
                 current_segment = [t]
-                segment_start = int(current_time // segment_duration * segment_duration)  # Align to multiples of 5min
+                segment_start = int(current_time // segment_duration * segment_duration)
             else:
                 current_segment.append(t)
 
         # Last segment
-        if current_segment:
-            segment_text = " ".join([s.text for s in current_segment])
-            chunk_summaries = summarize_chunks(segment_text)
-            segment_end = segment_start + segment_duration
-            segments.append({
-                "start_time": format_time(segment_start),
-                "end_time": format_time(segment_end),
-                "summary": " ".join(chunk_summaries)
-            })
+        if current_segment and len(current_segment) > 0:
+            segment_text = " ".join([s['text'] for s in current_segment])
+            if segment_text.strip():
+                chunk_summaries = summarize_chunks(segment_text)
+                segment_end = segment_start + segment_duration
+                segments.append({
+                    "start_time": format_time(segment_start),
+                    "end_time": format_time(segment_end),
+                    "summary": " ".join(chunk_summaries)
+                })
 
         print(f"[DEBUG] Created {len(segments)} segments (lang: {video_lang})")
         return {"segments": segments, "original_lang": video_lang}

@@ -3,6 +3,5 @@ uvicorn
 transformers
 torch
 python-dotenv
-requests
-pydantic
-youtube-transcript-api
+webvtt-py
+yt-dlp
